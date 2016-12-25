@@ -21,6 +21,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.res.Resources;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -93,6 +95,11 @@ public class SunshineWatchFaceService extends CanvasWatchFaceService {
         Paint mTextPaint;
         Paint mDayAndDatePaint;
         Paint mLineSeparator;
+        Bitmap mWeatherBitmap;
+        Paint mMaxTemperaturePaint;
+        Paint mMinTemperaturePaint;
+        String mMaxTemperatureString;
+        String mMinTemperatureString;
 
         boolean mAmbient;
         Calendar mCalendar;
@@ -109,6 +116,9 @@ public class SunshineWatchFaceService extends CanvasWatchFaceService {
         float mYOffset;
         float mSpacing;
         float mlineYOffset;
+        int mWeatherBitmapWidth;
+        int mWeatherBitmapHeight;
+
 
 
 
@@ -132,6 +142,10 @@ public class SunshineWatchFaceService extends CanvasWatchFaceService {
             mYOffset = resources.getDimension(R.dimen.digital_y_offset);
             mSpacing = resources.getDimension(R.dimen.spacing_y_offset);
             mlineYOffset = mYOffset+ (2 * mSpacing);
+            mWeatherBitmapHeight = (int) resources.getDimension(R.dimen.weather_image_height);
+            mWeatherBitmapWidth = (int) resources.getDimension(R.dimen.weather_image_width);
+            mMaxTemperatureString = "00";
+            mMinTemperatureString = "00";
 
             mBackgroundPaint = new Paint();
             mBackgroundPaint.setColor(resources.getColor(R.color.background));
@@ -150,6 +164,15 @@ public class SunshineWatchFaceService extends CanvasWatchFaceService {
             mDayOfWeekFormat.setCalendar(mCalendar);
             mDateFormat = new SimpleDateFormat("MMM d yyyy", Locale.getDefault());
             mDateFormat.setCalendar(mCalendar);
+
+            mWeatherBitmap = BitmapFactory.decodeResource(getResources(),
+                    R.mipmap.ic_launcher);
+
+            mMaxTemperaturePaint = new Paint();
+            mMaxTemperaturePaint = createTextPaint(resources.getColor(R.color.digital_primary_text));
+
+            mMinTemperaturePaint = new Paint();
+            mMinTemperaturePaint = createTextPaint(resources.getColor(R.color.digital_secondary_text));
 
         }
 
@@ -217,6 +240,11 @@ public class SunshineWatchFaceService extends CanvasWatchFaceService {
 
             mTextPaint.setTextSize(textSize);
             mDayAndDatePaint.setTextSize(textSize/2.5f);
+            mMaxTemperaturePaint.setTextSize(textSize/2f);
+            mMinTemperaturePaint.setTextSize(textSize/2f);
+
+
+
         }
 
         @Override
@@ -239,6 +267,10 @@ public class SunshineWatchFaceService extends CanvasWatchFaceService {
                 if (mLowBitAmbient) {
                     mTextPaint.setAntiAlias(!inAmbientMode);
                     mDayAndDatePaint.setAntiAlias(!inAmbientMode);
+                    mLineSeparator.setAntiAlias(!inAmbientMode);
+                    mMaxTemperaturePaint.setAntiAlias(!inAmbientMode);
+                    mMinTemperaturePaint.setAntiAlias(!inAmbientMode);
+
                 }
                 invalidate();
             }
@@ -246,29 +278,6 @@ public class SunshineWatchFaceService extends CanvasWatchFaceService {
             // Whether the timer should be running depends on whether we're visible (as well as
             // whether we're in ambient mode), so we may need to start or stop the timer.
             updateTimer();
-        }
-
-        /**
-         * Captures tap event (and tap type) and toggles the background color if the user finishes
-         * a tap.
-         */
-        @Override
-        public void onTapCommand(int tapType, int x, int y, long eventTime) {
-            switch (tapType) {
-                case TAP_TYPE_TOUCH:
-                    // The user has started touching the screen.
-                    break;
-                case TAP_TYPE_TOUCH_CANCEL:
-                    // The user has started a different gesture or otherwise cancelled the tap.
-                    break;
-                case TAP_TYPE_TAP:
-                    // The user has completed the tap gesture.
-                    // TODO: Add code to handle the tap gesture.
-                    Toast.makeText(getApplicationContext(), R.string.message, Toast.LENGTH_SHORT)
-                            .show();
-                    break;
-            }
-            invalidate();
         }
 
         @Override
@@ -300,6 +309,22 @@ public class SunshineWatchFaceService extends CanvasWatchFaceService {
             float x1 = 3 * eighthWidth;
             float x2 = 5 * eighthWidth;
             canvas.drawLine(x1, mlineYOffset,x2,mlineYOffset,mLineSeparator);
+
+            // Draw Weather Bitmap
+            Bitmap drawableWeatherBitmap = Bitmap.createScaledBitmap(mWeatherBitmap,
+                    mWeatherBitmapWidth, mWeatherBitmapHeight, true);
+            float bitmapXOffset = x1 - drawableWeatherBitmap.getWidth()*1.5f;
+            canvas.drawBitmap(drawableWeatherBitmap,bitmapXOffset,
+                    mlineYOffset + 2*mSpacing - drawableWeatherBitmap.getHeight(), new Paint());
+
+            // Draw Temperature Text
+            String maxTemperatureString = mMaxTemperatureString + "\u00b0";
+            String minTemperatureString = mMinTemperatureString + "\u00b0";
+
+            canvas.drawText(maxTemperatureString, x1,
+                    mlineYOffset + 2*mSpacing - (drawableWeatherBitmap.getHeight()/4f), mMaxTemperaturePaint);
+            canvas.drawText(minTemperatureString, x1+mMaxTemperaturePaint.measureText(maxTemperatureString)*1.5f,
+                    mlineYOffset + 2*mSpacing - (drawableWeatherBitmap.getHeight()/4f),mMinTemperaturePaint );
 
         }
 
