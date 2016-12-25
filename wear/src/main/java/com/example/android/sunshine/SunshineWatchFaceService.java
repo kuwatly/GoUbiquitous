@@ -92,6 +92,7 @@ public class SunshineWatchFaceService extends CanvasWatchFaceService {
         Paint mBackgroundPaint;
         Paint mTextPaint;
         Paint mDayAndDatePaint;
+        Paint mLineSeparator;
 
         boolean mAmbient;
         Calendar mCalendar;
@@ -107,6 +108,7 @@ public class SunshineWatchFaceService extends CanvasWatchFaceService {
         float mXOffset;
         float mYOffset;
         float mSpacing;
+        float mlineYOffset;
 
 
 
@@ -129,6 +131,7 @@ public class SunshineWatchFaceService extends CanvasWatchFaceService {
             Resources resources = SunshineWatchFaceService.this.getResources();
             mYOffset = resources.getDimension(R.dimen.digital_y_offset);
             mSpacing = resources.getDimension(R.dimen.spacing_y_offset);
+            mlineYOffset = mYOffset+ (2 * mSpacing);
 
             mBackgroundPaint = new Paint();
             mBackgroundPaint.setColor(resources.getColor(R.color.background));
@@ -138,6 +141,9 @@ public class SunshineWatchFaceService extends CanvasWatchFaceService {
 
             mDayAndDatePaint = new Paint();
             mDayAndDatePaint = createTextPaint(resources.getColor(R.color.digital_secondary_text));
+
+            mLineSeparator = new Paint();
+            mLineSeparator.setColor(resources.getColor(R.color.digital_secondary_text));
 
             mCalendar = Calendar.getInstance();
             mDayOfWeekFormat = new SimpleDateFormat("EEE", Locale.getDefault());
@@ -278,13 +284,22 @@ public class SunshineWatchFaceService extends CanvasWatchFaceService {
             long now = System.currentTimeMillis();
             mCalendar.setTimeInMillis(now);
 
+            // Draw Time
             String text = String.format("%d:%02d", mCalendar.get(Calendar.HOUR_OF_DAY),
                     mCalendar.get(Calendar.MINUTE));
             canvas.drawText(text, mXOffset, mYOffset, mTextPaint);
 
+            // Draw Date
+            float quarterWidth = bounds.width()/4f;
             String dayAndDate = mDayOfWeekFormat.format(now) + ", " + mDateFormat.format(now);
-            float datePosition = (bounds.width()/2f)- mDayAndDatePaint.measureText(dayAndDate) / 2;
+            float datePosition = (2f*quarterWidth)- mDayAndDatePaint.measureText(dayAndDate) / 2;
             canvas.drawText(dayAndDate, datePosition, mYOffset + mSpacing, mDayAndDatePaint);
+
+            // Draw Line
+            float eighthWidth = quarterWidth/2;
+            float x1 = 3 * eighthWidth;
+            float x2 = 5 * eighthWidth;
+            canvas.drawLine(x1, mlineYOffset,x2,mlineYOffset,mLineSeparator);
 
         }
 
