@@ -12,13 +12,25 @@ import android.net.Uri;
 import android.support.v4.app.NotificationCompat;
 import android.support.v4.app.TaskStackBuilder;
 import android.support.v4.content.ContextCompat;
+import android.util.Log;
 
 import com.example.android.sunshine.DetailActivity;
+import com.example.android.sunshine.MainActivity;
 import com.example.android.sunshine.R;
 import com.example.android.sunshine.data.SunshinePreferences;
 import com.example.android.sunshine.data.WeatherContract;
+import com.google.android.gms.common.api.ResultCallback;
+import com.google.android.gms.wearable.DataApi;
+import com.google.android.gms.wearable.PutDataMapRequest;
+import com.google.android.gms.wearable.PutDataRequest;
+import com.google.android.gms.wearable.Wearable;
 
 public class NotificationUtils {
+    private static final String TAG = "NotificationUtils";
+    private static final String KEY_WEATHER_ID = "WEATHER_ID";
+    private static final String KEY_MAX_TEMPERATURE = "MAX_TEMPERATURE";
+    private static final String KEY_MIN_TEMPERATURE = "MIN_TEMPERATURE";
+    private static final String WEATHER_DATA_PATH = "/WEATHER_DATA_PATH";
 
     /*
      * The columns of data that we are interested in displaying within our notification to let
@@ -174,5 +186,53 @@ public class NotificationUtils {
                 SunshineWeatherUtils.formatTemperature(context, low));
 
         return notificationText;
+    }
+
+    public static void notifyWearOfNewWeather(Context context) {
+
+        Uri todaysWeatherUri = WeatherContract.WeatherEntry
+                .buildWeatherUriWithDate(SunshineDateUtils.normalizeDate(System.currentTimeMillis()));
+        Cursor todayWeatherCursor = context.getContentResolver().query(
+                todaysWeatherUri,
+                WEATHER_NOTIFICATION_PROJECTION,
+                null,
+                null,
+                null);
+        if (todayWeatherCursor.moveToFirst()) {
+            int weatherId = todayWeatherCursor.getInt(INDEX_WEATHER_ID);
+            String high = String.valueOf((int) Math.round(todayWeatherCursor.getDouble(INDEX_MAX_TEMP)));
+            String low = String.valueOf((int) Math.round(todayWeatherCursor.getDouble(INDEX_MIN_TEMP)));
+            String weatherSummary = high + "-" + low + "-" + weatherId;
+            if(!SunshinePreferences.isWearUpToDate(context,weatherSummary)) {
+                //Wear Update only if weather has changed to save battery
+                PutDataMapRequest dataMap = PutDataMapRequest.create(WEATHER_DATA_PATH);
+                dataMap.getDataMap().putString(KEY_MAX_TEMPERATURE, high);
+                dataMap.getDataMap().putString(KEY_MIN_TEMPERATURE, low);
+                dataMap.getDataMap().putLong(KEY_WEATHER_ID, weatherId);
+                // To avoid delays in sending message attach a time stamp and set as urgent
+                dataMap.getDataMap().putLong("Time", System.currentTimeMillis());
+                dataMap.setUrgent();
+                PutDataRequest request = dataMap.asPutDataRequest();
+
+                Wearable.DataApi.putDataItem(MainActivity.mGoogleApiClient, request)
+                        .setResultCallback(new ResultCallback<DataApi.DataItemResult>() {
+                            @Override
+                            public void onResult(DataApi.DataItemResult result) {
+                                if (!result.getStatus().isSuccess()) {
+                                    // Failure Scenario
+                                    Log.d(TAG, "Failed to send data to wear: "
+                                            + result.getStatus().getStatusCode());
+                                } else {
+                                    // Success Scenario
+                                    Log.d(TAG, "Successfully sent data to wear: "
+                                            + result.getDataItem().getUri());
+                                }
+                            }
+                        });
+                SunshinePreferences.saveWearUpdateValues(context, weatherSummary);
+            }
+        }
+
+        todayWeatherCursor.close();
     }
 }

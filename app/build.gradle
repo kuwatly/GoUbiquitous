@@ -6,7 +6,7 @@ android {
 
     defaultConfig {
         applicationId "com.example.android.sunshine"
-        minSdkVersion 10
+        minSdkVersion 21
         targetSdkVersion 25
         versionCode 1
         versionName "1.0"
@@ -31,6 +31,9 @@ dependencies {
     compile 'com.android.support.constraint:constraint-layout:1.0.0-beta3'
 
     compile 'com.firebase:firebase-jobdispatcher:0.5.0'
+    compile 'com.google.android.support:wearable:2.0.0-beta1'
+    compile 'com.google.android.gms:play-services-wearable:10.0.1'
+    wearApp project(':wear')
 
     // Instrumentation dependencies use androidTestCompile
     // (as opposed to testCompile for local unit tests run in the JVM)
@@ -38,4 +41,6 @@ dependencies {
     androidTestCompile 'com.android.support:support-annotations:25.1.0'
     androidTestCompile 'com.android.support.test:runner:0.5'
     androidTestCompile 'com.android.support.test:rules:0.5'
+
+
 }

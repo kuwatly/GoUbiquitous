@@ -33,9 +33,19 @@ import android.os.Handler;
 import android.os.Message;
 import android.support.wearable.watchface.CanvasWatchFaceService;
 import android.support.wearable.watchface.WatchFaceStyle;
+import android.util.Log;
 import android.view.SurfaceHolder;
 import android.view.WindowInsets;
-import android.widget.Toast;
+
+import com.google.android.gms.common.ConnectionResult;
+import com.google.android.gms.common.api.GoogleApiClient;
+import com.google.android.gms.wearable.DataApi;
+import com.google.android.gms.wearable.DataEvent;
+import com.google.android.gms.wearable.DataEventBuffer;
+import com.google.android.gms.wearable.DataItem;
+import com.google.android.gms.wearable.DataMap;
+import com.google.android.gms.wearable.DataMapItem;
+import com.google.android.gms.wearable.Wearable;
 
 import java.lang.ref.WeakReference;
 import java.text.SimpleDateFormat;
@@ -56,12 +66,17 @@ public class SunshineWatchFaceService extends CanvasWatchFaceService {
      * Update rate in milliseconds for interactive mode. We update once a second since seconds are
      * displayed in interactive mode.
      */
-    private static final long INTERACTIVE_UPDATE_RATE_MS = TimeUnit.SECONDS.toMillis(1);
+    private static final long INTERACTIVE_UPDATE_RATE_MS = TimeUnit.SECONDS.toMillis(500);
 
     /**
      * Handler message id for updating the time periodically in interactive mode.
      */
     private static final int MSG_UPDATE_TIME = 0;
+
+    private static final String KEY_WEATHER_ID = "WEATHER_ID";
+    private static final String KEY_MAX_TEMPERATURE = "MAX_TEMPERATURE";
+    private static final String KEY_MIN_TEMPERATURE = "MIN_TEMPERATURE";
+    private static final String WEATHER_DATA_PATH = "/WEATHER_DATA_PATH";
 
     @Override
     public Engine onCreateEngine() {
@@ -88,7 +103,9 @@ public class SunshineWatchFaceService extends CanvasWatchFaceService {
         }
     }
 
-    private class Engine extends CanvasWatchFaceService.Engine {
+    private class Engine extends CanvasWatchFaceService.Engine implements
+            GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener, DataApi.DataListener {
+        final static String TAG = "SunshineFaceWatchEngine";
         final Handler mUpdateTimeHandler = new EngineHandler(this);
         boolean mRegisteredTimeZoneReceiver = false;
         Paint mBackgroundPaint;
@@ -96,6 +113,7 @@ public class SunshineWatchFaceService extends CanvasWatchFaceService {
         Paint mDayAndDatePaint;
         Paint mLineSeparator;
         Bitmap mWeatherBitmap;
+        Paint mWeatherBitmapPaint;
         Paint mMaxTemperaturePaint;
         Paint mMinTemperaturePaint;
         String mMaxTemperatureString;
@@ -119,7 +137,7 @@ public class SunshineWatchFaceService extends CanvasWatchFaceService {
         int mWeatherBitmapWidth;
         int mWeatherBitmapHeight;
 
-
+        GoogleApiClient mGoogleApiClient;
 
 
         /**
@@ -141,7 +159,7 @@ public class SunshineWatchFaceService extends CanvasWatchFaceService {
             Resources resources = SunshineWatchFaceService.this.getResources();
             mYOffset = resources.getDimension(R.dimen.digital_y_offset);
             mSpacing = resources.getDimension(R.dimen.spacing_y_offset);
-            mlineYOffset = mYOffset+ (2 * mSpacing);
+            mlineYOffset = mYOffset + (2 * mSpacing);
             mWeatherBitmapHeight = (int) resources.getDimension(R.dimen.weather_image_height);
             mWeatherBitmapWidth = (int) resources.getDimension(R.dimen.weather_image_width);
             mMaxTemperatureString = "00";
@@ -168,11 +186,20 @@ public class SunshineWatchFaceService extends CanvasWatchFaceService {
             mWeatherBitmap = BitmapFactory.decodeResource(getResources(),
                     R.mipmap.ic_launcher);
 
+            mWeatherBitmapPaint = new Paint();
+
             mMaxTemperaturePaint = new Paint();
             mMaxTemperaturePaint = createTextPaint(resources.getColor(R.color.digital_primary_text));
 
             mMinTemperaturePaint = new Paint();
             mMinTemperaturePaint = createTextPaint(resources.getColor(R.color.digital_secondary_text));
+
+            mGoogleApiClient = new GoogleApiClient.Builder(SunshineWatchFaceService.this)
+                    .addConnectionCallbacks(this)
+                    .addOnConnectionFailedListener(this)
+                    .addApi(Wearable.API)
+                    .build();
+
 
         }
 
@@ -216,6 +243,7 @@ public class SunshineWatchFaceService extends CanvasWatchFaceService {
             mRegisteredTimeZoneReceiver = true;
             IntentFilter filter = new IntentFilter(Intent.ACTION_TIMEZONE_CHANGED);
             SunshineWatchFaceService.this.registerReceiver(mTimeZoneReceiver, filter);
+            mGoogleApiClient.connect();
         }
 
         private void unregisterReceiver() {
@@ -224,6 +252,11 @@ public class SunshineWatchFaceService extends CanvasWatchFaceService {
             }
             mRegisteredTimeZoneReceiver = false;
             SunshineWatchFaceService.this.unregisterReceiver(mTimeZoneReceiver);
+            if (mGoogleApiClient != null && mGoogleApiClient.isConnected()) {
+                Wearable.DataApi.removeListener(mGoogleApiClient, this);
+                mGoogleApiClient.disconnect();
+                Log.i(TAG, "unregisterReceiver: Disconnected");
+            }
         }
 
         @Override
@@ -239,9 +272,9 @@ public class SunshineWatchFaceService extends CanvasWatchFaceService {
                     ? R.dimen.digital_text_size_round : R.dimen.digital_text_size);
 
             mTextPaint.setTextSize(textSize);
-            mDayAndDatePaint.setTextSize(textSize/2.5f);
-            mMaxTemperaturePaint.setTextSize(textSize/2f);
-            mMinTemperaturePaint.setTextSize(textSize/2f);
+            mDayAndDatePaint.setTextSize(textSize / 2.5f);
+            mMaxTemperaturePaint.setTextSize(textSize / 2f);
+            mMinTemperaturePaint.setTextSize(textSize / 2f);
 
 
 
@@ -270,6 +303,8 @@ public class SunshineWatchFaceService extends CanvasWatchFaceService {
                     mLineSeparator.setAntiAlias(!inAmbientMode);
                     mMaxTemperaturePaint.setAntiAlias(!inAmbientMode);
                     mMinTemperaturePaint.setAntiAlias(!inAmbientMode);
+                    mWeatherBitmapPaint.setAntiAlias(!inAmbientMode);
+                    mWeatherBitmapPaint.setFilterBitmap(!inAmbientMode);
 
                 }
                 invalidate();
@@ -299,32 +334,32 @@ public class SunshineWatchFaceService extends CanvasWatchFaceService {
             canvas.drawText(text, mXOffset, mYOffset, mTextPaint);
 
             // Draw Date
-            float quarterWidth = bounds.width()/4f;
+            float quarterWidth = bounds.width() / 4f;
             String dayAndDate = mDayOfWeekFormat.format(now) + ", " + mDateFormat.format(now);
-            float datePosition = (2f*quarterWidth)- mDayAndDatePaint.measureText(dayAndDate) / 2;
+            float datePosition = (2f * quarterWidth) - mDayAndDatePaint.measureText(dayAndDate) / 2;
             canvas.drawText(dayAndDate, datePosition, mYOffset + mSpacing, mDayAndDatePaint);
 
             // Draw Line
-            float eighthWidth = quarterWidth/2;
+            float eighthWidth = quarterWidth / 2;
             float x1 = 3 * eighthWidth;
             float x2 = 5 * eighthWidth;
-            canvas.drawLine(x1, mlineYOffset,x2,mlineYOffset,mLineSeparator);
+            canvas.drawLine(x1, mlineYOffset, x2, mlineYOffset, mLineSeparator);
 
             // Draw Weather Bitmap
             Bitmap drawableWeatherBitmap = Bitmap.createScaledBitmap(mWeatherBitmap,
                     mWeatherBitmapWidth, mWeatherBitmapHeight, true);
-            float bitmapXOffset = x1 - drawableWeatherBitmap.getWidth()*1.5f;
-            canvas.drawBitmap(drawableWeatherBitmap,bitmapXOffset,
-                    mlineYOffset + 2*mSpacing - drawableWeatherBitmap.getHeight(), new Paint());
+            float bitmapXOffset = x1 - drawableWeatherBitmap.getWidth() * 1.5f;
+            canvas.drawBitmap(drawableWeatherBitmap, bitmapXOffset,
+                    mlineYOffset + 2 * mSpacing - drawableWeatherBitmap.getHeight(), mWeatherBitmapPaint);
 
             // Draw Temperature Text
             String maxTemperatureString = mMaxTemperatureString + "\u00b0";
             String minTemperatureString = mMinTemperatureString + "\u00b0";
 
             canvas.drawText(maxTemperatureString, x1,
-                    mlineYOffset + 2*mSpacing - (drawableWeatherBitmap.getHeight()/4f), mMaxTemperaturePaint);
-            canvas.drawText(minTemperatureString, x1+mMaxTemperaturePaint.measureText(maxTemperatureString)*1.5f,
-                    mlineYOffset + 2*mSpacing - (drawableWeatherBitmap.getHeight()/4f),mMinTemperaturePaint );
+                    mlineYOffset + 2 * mSpacing - (drawableWeatherBitmap.getHeight() / 4f), mMaxTemperaturePaint);
+            canvas.drawText(minTemperatureString, x1 + mMaxTemperaturePaint.measureText(maxTemperatureString) * 1.5f,
+                    mlineYOffset + 2 * mSpacing - (drawableWeatherBitmap.getHeight() / 4f), mMinTemperaturePaint);
 
         }
 
@@ -359,5 +394,80 @@ public class SunshineWatchFaceService extends CanvasWatchFaceService {
                 mUpdateTimeHandler.sendEmptyMessageDelayed(MSG_UPDATE_TIME, delayMs);
             }
         }
+
+        // DataItem retrieval and processing
+        @Override
+        public void onDataChanged(DataEventBuffer dataEventBuffer) {
+            Log.i(TAG, "onDataChanged: Called");
+            for (DataEvent event : dataEventBuffer) {
+                DataItem item = event.getDataItem();
+                if (WEATHER_DATA_PATH.equals(item.getUri().getPath())) {
+                    DataMap weatherDataMap = DataMapItem.fromDataItem(item).getDataMap();
+                    int weatherId = (int) weatherDataMap.getLong(KEY_WEATHER_ID);
+                    if (weatherId != 0) {
+                        mWeatherBitmap = BitmapFactory.decodeResource(getResources(),
+                                getSmallArtResourceIdForWeatherCondition(weatherId));
+                    }
+                    if (mWeatherBitmap == null) {
+                        mWeatherBitmap = BitmapFactory.decodeResource(getResources(),
+                                R.mipmap.ic_launcher);
+                    }
+                    mMaxTemperatureString = weatherDataMap.getString(KEY_MAX_TEMPERATURE);
+                    mMinTemperatureString = weatherDataMap.getString(KEY_MIN_TEMPERATURE);
+                    invalidate();
+                }
+            }
+        }
+
+        @Override
+        public void onConnected(Bundle bundle) {
+            Log.d(TAG, "onConnected");
+            Wearable.DataApi.addListener(mGoogleApiClient, this);
+        }
+        @Override
+        public void onConnectionSuspended(int cause) {
+            Log.d(TAG, "onConnectionSuspended");
+
+        }
+        @Override
+        public void onConnectionFailed(ConnectionResult connectionResult) {
+            Log.d(TAG, "onConnectionFailed: " + connectionResult.getErrorMessage());
+
+        }
+
+        public int getSmallArtResourceIdForWeatherCondition(int weatherId) {
+
+            if (weatherId >= 200 && weatherId <= 232) {
+                return R.drawable.ic_storm;
+            } else if (weatherId >= 300 && weatherId <= 321) {
+                return R.drawable.ic_light_rain;
+            } else if (weatherId >= 500 && weatherId <= 504) {
+                return R.drawable.ic_rain;
+            } else if (weatherId == 511) {
+                return R.drawable.ic_snow;
+            } else if (weatherId >= 520 && weatherId <= 531) {
+                return R.drawable.ic_rain;
+            } else if (weatherId >= 600 && weatherId <= 622) {
+                return R.drawable.ic_snow;
+            } else if (weatherId >= 701 && weatherId <= 761) {
+                return R.drawable.ic_fog;
+            } else if (weatherId == 761 || weatherId == 771 || weatherId == 781) {
+                return R.drawable.ic_storm;
+            } else if (weatherId == 800) {
+                return R.drawable.ic_clear;
+            } else if (weatherId == 801) {
+                return R.drawable.ic_light_clouds;
+            } else if (weatherId >= 802 && weatherId <= 804) {
+                return R.drawable.ic_cloudy;
+            } else if (weatherId >= 900 && weatherId <= 906) {
+                return R.drawable.ic_storm;
+            } else if (weatherId >= 958 && weatherId <= 962) {
+                return R.drawable.ic_storm;
+            } else if (weatherId >= 951 && weatherId <= 957) {
+                return R.drawable.ic_clear;
+            }
+            return R.drawable.ic_storm;
+        }
+
     }
 }
